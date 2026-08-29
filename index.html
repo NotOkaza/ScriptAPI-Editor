@@ -80,9 +80,9 @@
     display: flex; align-items: center; gap: 5px;
     padding: 5px 10px; background: #202021;
     border-top: 1px solid #3c3c3c; border-bottom: 1px solid #3c3c3c;
-    flex-wrap: wrap;
+    overflow-x: auto; -webkit-overflow-scrolling: touch;
   }
-  #actionbar button { flex: 1; min-width: 56px; }
+  #actionbar button { flex: 0 0 auto; white-space: nowrap; }
   #delbar {
     display: flex; align-items: center; gap: 6px;
     padding: 5px 10px; background: #202021;
@@ -155,6 +155,7 @@
     <div id="topbar">
       <button id="btn-home">← Home</button>
       <span id="current-filename">main.js</span>
+      <button id="btn-tab">Tab</button>
     </div>
     <div style="position: relative; flex: 1; min-height: 0;">
       <div id="loading">Memuat editor...</div>
@@ -162,6 +163,10 @@
       <div id="editor-container"></div>
     </div>
     <div id="actionbar">
+      <button id="btn-left">←</button>
+      <button id="btn-right">→</button>
+      <button id="btn-up">↑</button>
+      <button id="btn-down">↓</button>
       <button id="btn-types">Types</button>
       <button id="btn-font">Font</button>
       <button id="btn-copy">Copy</button>
@@ -854,6 +859,43 @@
   bindHoldRepeat(document.getElementById('btn-del-word'), () => {
     if (!editor) return;
     editor.trigger('toolbar', 'deleteWordLeft', null);
+  });
+
+  function bindTap(el, action) {
+    let lastTime = 0;
+    const handler = (e) => {
+      const now = Date.now();
+      el.classList.add('pressed');
+      setTimeout(() => el.classList.remove('pressed'), 120);
+      e.preventDefault();
+      if (now - lastTime < 200) return;
+      lastTime = now;
+      action();
+    };
+    el.addEventListener('touchstart', handler, { passive: false });
+    el.addEventListener('mousedown', handler);
+  }
+
+  bindTap(document.getElementById('btn-tab'), () => {
+    if (!editor) return;
+    editor.trigger('toolbar', 'tab', null);
+  });
+
+  bindHoldRepeat(document.getElementById('btn-left'), () => {
+    if (!editor) return;
+    editor.trigger('toolbar', 'cursorLeft', null);
+  });
+  bindHoldRepeat(document.getElementById('btn-right'), () => {
+    if (!editor) return;
+    editor.trigger('toolbar', 'cursorRight', null);
+  });
+  bindHoldRepeat(document.getElementById('btn-up'), () => {
+    if (!editor) return;
+    editor.trigger('toolbar', 'cursorUp', null);
+  });
+  bindHoldRepeat(document.getElementById('btn-down'), () => {
+    if (!editor) return;
+    editor.trigger('toolbar', 'cursorDown', null);
   });
 
   document.getElementById('btn-download').addEventListener('click', () => {
