@@ -51,6 +51,10 @@
   #home-topbar p { margin: 0; font-size: 11px; color: #888; }
   #home-list { flex: 1; overflow-y: auto; padding: 10px; }
   #home-empty { text-align: center; color: #666; font-size: 13px; padding: 40px 16px; }
+  .folder-header {
+    font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.5px;
+    padding: 10px 4px 4px;
+  }
   .file-card {
     display: flex; align-items: center; gap: 8px;
     background: #252526; border: 1px solid #3c3c3c; border-radius: 8px;
@@ -170,6 +174,7 @@
       <button id="btn-right">→</button>
       <button id="btn-up">↑</button>
       <button id="btn-down">↓</button>
+      <button id="btn-wrap">Wrap</button>
       <button id="btn-types">Types</button>
       <button id="btn-font">Font</button>
       <button id="btn-copy">Copy</button>
@@ -264,6 +269,7 @@
   const TYPES_KEY = 'mc-editor-types';
   const FONT_KEY = 'mc-editor-font';
   const FONT_SIZE_KEY = 'mc-editor-fontsize';
+  const WRAP_KEY = 'mc-editor-wordwrap';
   const MAX_FILES = 10;
 
   let editor = null;
@@ -274,14 +280,7 @@
   let monacoLoadCallbacks = [];
   const openModels = {};
 
-  const defaultCode = [
-    'import { world, system } from "@minecraft/server";',
-    '',
-    'world.afterEvents.entityHitEntity.subscribe((event) => {',
-    '  ',
-    '});',
-    ''
-  ].join('\n');
+  const defaultCode = 'import { world, system } from "@minecraft/server";\n';
 
   function genId() {
     return 'f' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -321,6 +320,21 @@
   }
   migrateOldSingleFile();
 
+  function fullPath(f) {
+    return (f.folder ? f.folder.replace(/^\/+|\/+$/g, '') + '/' : '') + f.name;
+  }
+  function pathExists(path) {
+    return loadFilesIndex().some((f) => fullPath(f) === path);
+  }
+  function parseFolderAndName(raw) {
+    const idx = raw.lastIndexOf('/');
+    if (idx === -1) return { folder: '', name: raw };
+    return {
+      folder: raw.substring(0, idx).replace(/^\/+|\/+$/g, ''),
+      name: raw.substring(idx + 1)
+    };
+  }
+
   function renderHome() {
     const list = loadFilesIndex().slice().sort((a, b) => b.updatedAt - a.updatedAt);
     const wrap = document.getElementById('home-list');
@@ -331,33 +345,52 @@
       empty.textContent = 'Belum ada file. Tekan tombol di bawah untuk mulai.';
       wrap.appendChild(empty);
     } else {
+      const groups = {};
       list.forEach((f) => {
-        const card = document.createElement('div');
-        card.className = 'file-card';
+        const key = f.folder || '';
+        if (!groups[key]) groups[key] = [];
+        groups[key].push(f);
+      });
+      const folderNames = Object.keys(groups).sort((a, b) => {
+        if (a === '') return -1;
+        if (b === '') return 1;
+        return a.localeCompare(b);
+      });
+      folderNames.forEach((folderName) => {
+        if (folderName) {
+          const header = document.createElement('div');
+          header.className = 'folder-header';
+          header.textContent = '📁 ' + folderName;
+          wrap.appendChild(header);
+        }
+        groups[folderName].forEach((f) => {
+          const card = document.createElement('div');
+          card.className = 'file-card';
 
-        const info = document.createElement('div');
-        info.className = 'file-card-info';
-        const nameEl = document.createElement('div');
-        nameEl.className = 'file-card-name';
-        nameEl.textContent = f.name;
-        const dateEl = document.createElement('div');
-        dateEl.className = 'file-card-date';
-        dateEl.textContent = 'Diubah ' + formatDate(f.updatedAt);
-        info.appendChild(nameEl);
-        info.appendChild(dateEl);
-        info.addEventListener('click', () => openFile(f.id));
+          const info = document.createElement('div');
+          info.className = 'file-card-info';
+          const nameEl = document.createElement('div');
+          nameEl.className = 'file-card-name';
+          nameEl.textContent = f.name;
+          const dateEl = document.createElement('div');
+          dateEl.className = 'file-card-date';
+          dateEl.textContent = 'Diubah ' + formatDate(f.updatedAt);
+          info.appendChild(nameEl);
+          info.appendChild(dateEl);
+          info.addEventListener('click', () => openFile(f.id));
 
-        const delBtn = document.createElement('button');
-        delBtn.className = 'file-card-del';
-        delBtn.textContent = '✕';
-        delBtn.addEventListener('click', (ev) => {
-          ev.stopPropagation();
-          deleteFile(f.id);
+          const delBtn = document.createElement('button');
+          delBtn.className = 'file-card-del';
+          delBtn.textContent = '✕';
+          delBtn.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            deleteFile(f.id);
+          });
+
+          card.appendChild(info);
+          card.appendChild(delBtn);
+          wrap.appendChild(card);
         });
-
-        card.appendChild(info);
-        card.appendChild(delBtn);
-        wrap.appendChild(card);
       });
     }
     document.getElementById('home-count').textContent = list.length + ' / ' + MAX_FILES + ' file';
@@ -395,27 +428,32 @@
       alert('Maksimal ' + MAX_FILES + ' file. Hapus salah satu dulu sebelum membuat yang baru.');
       return;
     }
-    let name = prompt('Nama file baru:', 'main.js');
-    if (name === null) return;
-    name = name.trim();
-    if (!name) return;
-    if (!/\.js$/i.test(name)) name += '.js';
+    let raw = prompt('Nama file baru (bisa pakai folder, misal: utils/calculate.js):', 'main.js');
+    if (raw === null) return;
+    raw = raw.trim();
+    if (!raw) return;
+    if (!/\.js$/i.test(raw)) raw += '.js';
+
+    const parsed = parseFolderAndName(raw);
+    if (pathExists(raw)) {
+      alert('File dengan nama/folder itu sudah ada. Pakai nama lain.');
+      return;
+    }
 
     const id = genId();
     const newList = loadFilesIndex();
-    newList.push({ id: id, name: name, createdAt: Date.now(), updatedAt: Date.now() });
+    newList.push({ id: id, name: parsed.name, folder: parsed.folder, createdAt: Date.now(), updatedAt: Date.now() });
     saveFilesIndex(newList);
     localStorage.setItem(fileContentKey(id), defaultCode);
     openFile(id);
   });
 
   function uniqueFileName(name) {
-    const existing = loadFilesIndex().map((f) => f.name);
-    if (existing.indexOf(name) === -1) return name;
+    if (!pathExists(name)) return name;
     const base = name.replace(/\.js$/i, '');
     let n = 2;
     let candidate = base + ' (' + n + ').js';
-    while (existing.indexOf(candidate) !== -1) {
+    while (pathExists(candidate)) {
       n++;
       candidate = base + ' (' + n + ').js';
     }
@@ -467,7 +505,9 @@
 
   function getOrCreateModelForFile(id) {
     if (openModels[id]) return openModels[id];
-    const uri = monaco.Uri.parse('file:///' + id + '.js');
+    const meta = loadFilesIndex().find((f) => f.id === id);
+    if (!meta) return null;
+    const uri = monaco.Uri.parse('file:///' + fullPath(meta));
     let model = monaco.editor.getModel(uri);
     if (!model) {
       const content = localStorage.getItem(fileContentKey(id));
@@ -479,6 +519,10 @@
     }
     openModels[id] = model;
     return model;
+  }
+
+  function loadAllFileModels() {
+    loadFilesIndex().forEach((f) => { getOrCreateModelForFile(f.id); });
   }
 
   function openFile(id) {
@@ -579,6 +623,10 @@
         } catch (e) {}
       }, 150);
     }
+
+    setTimeout(() => {
+      try { loadAllFileModels(); } catch (e) {}
+    }, 100);
   }
 
   function ensureEditorInstance(initialModel) {
@@ -595,7 +643,7 @@
       fontSize: currentFontSize,
       minimap: { enabled: false },
       automaticLayout: true,
-      wordWrap: 'on',
+      wordWrap: getWordWrap(),
       scrollBeyondLastLine: false,
       tabSize: 2,
       accessibilitySupport: 'off',
@@ -615,6 +663,7 @@
     });
 
     markSelectedFont(savedFont);
+    updateWrapButton();
 
     window.addEventListener('resize', () => { if (editor) editor.layout(); });
     window.addEventListener('orientationchange', () => {
@@ -777,6 +826,16 @@
     }
   });
 
+  function getWordWrap() {
+    return localStorage.getItem(WRAP_KEY) || 'on';
+  }
+  function updateWrapButton() {
+    const btn = document.getElementById('btn-wrap');
+    const on = getWordWrap() === 'on';
+    btn.classList.toggle('primary', on);
+    btn.textContent = on ? 'Wrap: On' : 'Wrap: Off';
+  }
+
   function fontFamilyFor(choice) {
     if (choice === 'mc-ten') return "'Minecraft', monospace";
     if (choice === 'mc-ia') return "'Minecraftia', monospace";
@@ -936,6 +995,14 @@
     editor.trigger('toolbar', 'tab', null);
   });
 
+  bindTap(document.getElementById('btn-wrap'), () => {
+    if (!editor) return;
+    const newVal = getWordWrap() === 'on' ? 'off' : 'on';
+    localStorage.setItem(WRAP_KEY, newVal);
+    editor.updateOptions({ wordWrap: newVal });
+    updateWrapButton();
+  });
+
   bindHoldRepeat(document.getElementById('btn-left'), () => {
     if (!editor) return;
     editor.trigger('toolbar', 'cursorLeft', null);
@@ -977,6 +1044,7 @@
     localStorage.removeItem(TYPES_KEY);
     localStorage.removeItem(FONT_KEY);
     localStorage.removeItem(FONT_SIZE_KEY);
+    localStorage.removeItem(WRAP_KEY);
     localStorage.removeItem(OLD_CODE_KEY);
     location.reload();
   });
