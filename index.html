@@ -83,8 +83,35 @@
   #topbar {
     display: flex; align-items: center; gap: 6px;
     padding: 6px 10px; background: #252526; border-bottom: 1px solid #3c3c3c;
+    overflow-x: auto; -webkit-overflow-scrolling: touch;
   }
-  #current-filename { font-size: 13px; font-weight: 500; margin: 0 8px 0 0; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; }
+  #topbar button, #topbar select { flex: 0 0 auto; }
+  #current-filename { font-size: 12px; font-weight: 500; margin: 0 8px 0 0; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 90px; }
+  #btn-reset {
+    background: #5a2525; border-color: #7a3030; color: #ffb4a8;
+  }
+  #btn-reset:active, #btn-reset.pressed { background: #713030; }
+  #font-style-select {
+    background: #333; color: #ddd; border: 1px solid #4a4a4a;
+    border-radius: 5px; min-height: 26px; padding: 5px 8px;
+    font-size: 11px; font-family: inherit; font-weight: 500;
+  }
+  #settings-overlay {
+    display: none; position: absolute; inset: 0; background: rgba(0,0,0,0.7);
+    z-index: 15; align-items: center; justify-content: center; padding: 16px;
+  }
+  #settings-overlay.show { display: flex; }
+  #settings-panel {
+    background: #252526; border: 1px solid #4a4a4a; border-radius: 10px;
+    padding: 16px; width: 100%; max-width: 320px;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  #settings-panel h2 { margin: 0; font-size: 14px; color: #fff; }
+  #settings-panel .settings-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  }
+  #settings-panel label { font-size: 12px; color: #bbb; }
+  #settings-panel select { min-width: 150px; }
   #actionbar {
     display: flex; align-items: center; gap: 5px;
     padding: 5px 10px; background: #202021;
@@ -102,9 +129,36 @@
     min-height: 32px; background: #3a2020; border-color: #5a2c2c;
   }
   #delbar button:active, #delbar button.pressed { background: #5a2c2c; }
-  #editor-container { position: absolute; inset: 0; }
+  #editor-container {
+    position: absolute; inset: 0;
+    overscroll-behavior: contain;
+  }
+  /* Monaco scrollbar: lebih tipis dan tidak terlalu mencolok. */
+  .monaco-scrollable-element > .scrollbar.vertical {
+    width: 6px !important;
+    background: transparent !important;
+  }
+  .monaco-scrollable-element > .scrollbar.horizontal {
+    height: 6px !important;
+    background: transparent !important;
+  }
+  .monaco-scrollable-element > .scrollbar.vertical > .slider {
+    width: 6px !important;
+    left: 0 !important;
+    border-radius: 3px !important;
+    background: rgba(255, 255, 255, 0.18) !important;
+  }
+  .monaco-scrollable-element > .scrollbar.horizontal > .slider {
+    height: 6px !important;
+    top: 0 !important;
+    border-radius: 3px !important;
+    background: rgba(255, 255, 255, 0.18) !important;
+  }
+  .monaco-scrollable-element > .scrollbar > .slider:hover {
+    background: rgba(255, 255, 255, 0.28) !important;
+  }
   #status {
-    padding: 4px 10px; font-size: 11px; color: #888;
+    padding: 4px 10px; font-size: 10px; color: #888;
     background: #252526; border-top: 1px solid #3c3c3c;
   }
   #overlay {
@@ -125,10 +179,10 @@
   }
   .fname { font-size: 11px; color: #666; margin: 4px 0 0; word-break: break-all; }
   .fname.picked { color: #4fc3f7; }
-  #panel-actions { display: flex; gap: 8px; justify-content: flex-end; }
+  #panel-actions, #settings-actions { display: flex; gap: 8px; justify-content: flex-end; }
   #loading {
     position: absolute; inset: 0; display: flex; align-items: center;
-    justify-content: center; background: #1e1e1e; color: #888; font-size: 13px;
+    justify-content: center; background: #1e1e1e; color: #888; font-size: 12px;
     z-index: 5; flex-direction: column; gap: 8px; text-align: center; padding: 16px;
   }
   #err-box {
@@ -164,9 +218,9 @@
     <div id="topbar">
       <button id="btn-home">← Home</button>
       <span id="current-filename">main.js</span>
-      <button id="btn-tab">Tab</button>
-      <button id="btn-wrap">Wrap</button>
-      <button id="btn-font-style">Font: Consolas</button>
+      <button id="btn-download" class="primary">↓ .js</button>
+      <button id="btn-reset">Reset</button>
+      <button id="btn-settings">Settings</button>
     </div>
     <div style="position: relative; flex: 1; min-height: 0;">
       <div id="loading">Memuat editor...</div>
@@ -178,10 +232,7 @@
       <button id="btn-right">→</button>
       <button id="btn-up">↑</button>
       <button id="btn-down">↓</button>
-      <button id="btn-types">Types</button>
       <button id="btn-copy">Copy</button>
-      <button id="btn-download" class="primary">↓ .js</button>
-      <button id="btn-reset">Reset</button>
     </div>
     <div id="delbar">
       <button id="btn-del-char">⌫ Karakter</button>
@@ -190,6 +241,29 @@
     <div id="status">Belum ada types. Tekan "Types" lalu pilih file ZIP.</div>
   </div>
 
+</div>
+
+<div id="settings-overlay">
+  <div id="settings-panel">
+    <h2>Settings</h2>
+    <div class="settings-row">
+      <label for="font-style-select">Font</label>
+      <select id="font-style-select">
+        <option value="Roboto Mono">Roboto Mono</option>
+      </select>
+    </div>
+    <div class="settings-row">
+      <label>Word Wrap</label>
+      <button id="btn-wrap">Wrap</button>
+    </div>
+    <div class="settings-row">
+      <label>Type Definitions</label>
+      <button id="btn-types">Types</button>
+    </div>
+    <div id="settings-actions">
+      <button id="btn-settings-close">Tutup</button>
+    </div>
+  </div>
 </div>
 
 <div id="overlay">
@@ -251,12 +325,7 @@
   const WRAP_KEY = 'mc-editor-wordwrap';
   const FONT_STYLE_KEY = 'mc-editor-font-style';
 
-  const FONT_STYLES = [
-    { name: 'Consolas', family: "Consolas, 'Courier New', monospace" },
-    { name: 'Roboto Mono', family: "'Roboto Mono', Consolas, monospace" },
-    { name: 'Cascadia Mono', family: "'Cascadia Mono', Consolas, monospace" },
-    { name: 'Menlo', family: "Menlo, Monaco, Consolas, monospace" }
-  ];
+  const EDITOR_FONT = "'Roboto Mono', Consolas, monospace";
   const MAX_FILES = 10;
 
   let editor = null;
@@ -267,7 +336,7 @@
   let monacoLoadCallbacks = [];
   const openModels = {};
 
-  const defaultCode = 'import { world, system } from "@minecraft/server";\n';
+  const defaultCode = '\timport { world, system } from "@minecraft/server";';
 
   function genId() {
     return 'f' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -783,29 +852,12 @@
     }, 100);
   }
 
-  function getFontStyle() {
-    const saved = localStorage.getItem(FONT_STYLE_KEY);
-    return FONT_STYLES.find((font) => font.name === saved) || FONT_STYLES[0];
-  }
-
-  function updateFontStyleButton() {
-    const btn = document.getElementById('btn-font-style');
-    if (btn) btn.textContent = 'Font: ' + getFontStyle().name;
-  }
-
   function applyFontStyle() {
     if (!editor) return;
-    editor.updateOptions({ fontFamily: getFontStyle().family });
-    updateFontStyleButton();
+    editor.updateOptions({ fontFamily: EDITOR_FONT });
+    const select = document.getElementById('font-style-select');
+    if (select) select.value = 'Roboto Mono';
     editor.layout();
-  }
-
-  function cycleFontStyle() {
-    const current = getFontStyle();
-    const currentIndex = FONT_STYLES.findIndex((font) => font.name === current.name);
-    const next = FONT_STYLES[(currentIndex + 1) % FONT_STYLES.length];
-    localStorage.setItem(FONT_STYLE_KEY, next.name);
-    applyFontStyle();
   }
 
   function ensureEditorInstance(initialModel) {
@@ -816,14 +868,19 @@
     editor = monaco.editor.create(document.getElementById('editor-container'), {
       model: initialModel,
       theme: 'mc-dark',
-      fontFamily: getFontStyle().family,
+      fontFamily: EDITOR_FONT,
       fontSize: currentFontSize,
-      lineHeight: 20,
+      lineHeight: 18.5,
+      lineNumbers: 'on',
+      lineNumbersMinChars: 1,
+      glyphMargin: false,
+      lineDecorationsWidth: 0,
       minimap: { enabled: false },
       automaticLayout: true,
       wordWrap: getWordWrap(),
       scrollBeyondLastLine: false,
-      tabSize: 2,
+      tabSize: 1,
+      insertSpaces: true,
       accessibilitySupport: 'off',
       smoothScrolling: false,
       occurrencesHighlight: false,
@@ -841,7 +898,9 @@
     });
 
     updateWrapButton();
-    updateFontStyleButton();
+    document.getElementById('font-style-select').value = 'Roboto Mono';
+    applyFontStyle();
+    setupDirectionalScrollLock();
 
     window.addEventListener('resize', () => { if (editor) editor.layout(); });
     window.addEventListener('orientationchange', () => {
@@ -850,6 +909,91 @@
     if (window.visualViewport) {
       window.visualViewport.addEventListener('resize', () => { if (editor) editor.layout(); });
     }
+  }
+
+  function setupDirectionalScrollLock() {
+    if (!editor) return;
+
+    const domNode = editor.getDomNode();
+    if (!domNode) return;
+
+    let activeTouchId = null;
+    let startX = 0;
+    let startY = 0;
+    let lockedAxis = null;
+    let lockedScrollLeft = 0;
+    let lockedScrollTop = 0;
+    let enforcing = false;
+
+    function shouldLock() {
+      return getWordWrap() === 'off';
+    }
+
+    function enforceLockedAxis() {
+      if (!shouldLock() || !lockedAxis || enforcing) return;
+
+      const scrollLeft = editor.getScrollLeft();
+      const scrollTop = editor.getScrollTop();
+      const nextLeft = lockedAxis === 'vertical' ? lockedScrollLeft : scrollLeft;
+      const nextTop = lockedAxis === 'horizontal' ? lockedScrollTop : scrollTop;
+
+      if (scrollLeft === nextLeft && scrollTop === nextTop) return;
+
+      enforcing = true;
+      editor.setScrollLeft(nextLeft);
+      editor.setScrollTop(nextTop);
+      enforcing = false;
+    }
+
+    function getActiveTouch(event) {
+      if (activeTouchId === null) return event.touches[0] || null;
+      for (const touch of event.touches) {
+        if (touch.identifier === activeTouchId) return touch;
+      }
+      return null;
+    }
+
+    function onTouchStart(event) {
+      if (!shouldLock() || event.touches.length !== 1) return;
+
+      const touch = event.touches[0];
+      activeTouchId = touch.identifier;
+      startX = touch.clientX;
+      startY = touch.clientY;
+      lockedAxis = null;
+      lockedScrollLeft = editor.getScrollLeft();
+      lockedScrollTop = editor.getScrollTop();
+    }
+
+    function onTouchMove(event) {
+      if (!shouldLock() || activeTouchId === null) return;
+
+      const touch = getActiveTouch(event);
+      if (!touch) return;
+
+      const dx = touch.clientX - startX;
+      const dy = touch.clientY - startY;
+
+      if (!lockedAxis && Math.max(Math.abs(dx), Math.abs(dy)) >= 7) {
+        lockedAxis = Math.abs(dx) >= Math.abs(dy) ? 'horizontal' : 'vertical';
+      }
+
+      enforceLockedAxis();
+    }
+
+    function resetTouch() {
+      activeTouchId = null;
+      lockedAxis = null;
+    }
+
+    domNode.addEventListener('touchstart', onTouchStart, { passive: true });
+    domNode.addEventListener('touchmove', onTouchMove, { passive: true });
+    domNode.addEventListener('touchend', resetTouch, { passive: true });
+    domNode.addEventListener('touchcancel', resetTouch, { passive: true });
+
+    editor.onDidScrollChange(() => {
+      enforceLockedAxis();
+    });
   }
 
   function registerSnippets() {
@@ -912,6 +1056,7 @@
   }
 
   document.getElementById('btn-types').addEventListener('click', () => {
+    document.getElementById('settings-overlay').classList.remove('show');
     document.getElementById('overlay').classList.add('show');
   });
   document.getElementById('btn-cancel').addEventListener('click', () => {
@@ -1131,19 +1276,34 @@
     el.addEventListener('mousedown', handler);
   }
 
-  bindTap(document.getElementById('btn-tab'), () => {
-    if (!editor) return;
-    editor.trigger('toolbar', 'tab', null);
-  });
-
-  bindTap(document.getElementById('btn-font-style'), cycleFontStyle);
-
   bindTap(document.getElementById('btn-wrap'), () => {
     if (!editor) return;
     const newVal = getWordWrap() === 'on' ? 'off' : 'on';
     localStorage.setItem(WRAP_KEY, newVal);
     editor.updateOptions({ wordWrap: newVal });
     updateWrapButton();
+  });
+
+  document.getElementById('btn-settings').addEventListener('click', () => {
+    document.getElementById('settings-overlay').classList.add('show');
+  });
+
+  document.getElementById('btn-settings-close').addEventListener('click', () => {
+    document.getElementById('settings-overlay').classList.remove('show');
+  });
+
+  document.getElementById('settings-overlay').addEventListener('click', (event) => {
+    if (event.target === event.currentTarget) {
+      event.currentTarget.classList.remove('show');
+    }
+  });
+
+  document.getElementById('font-style-select').addEventListener('change', (event) => {
+    if (event.target.value !== 'Roboto Mono') {
+      event.target.value = 'Roboto Mono';
+    }
+    localStorage.setItem(FONT_STYLE_KEY, 'Roboto Mono');
+    applyFontStyle();
   });
 
   bindHoldRepeat(document.getElementById('btn-left'), () => {
