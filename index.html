@@ -67,7 +67,9 @@
     display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
   }
   #btn-new-js { flex: 1; min-width: 110px; }
+  #btn-new-folder { flex: 1; min-width: 90px; }
   #btn-import-js { flex: 1; min-width: 90px; }
+  #btn-install-all { flex: 1; min-width: 100px; }
   #home-count { font-size: 11px; color: #888; white-space: nowrap; }
 
   #editor-view { display: none; flex-direction: column; height: 100%; }
@@ -143,7 +145,9 @@
     <div id="home-list"></div>
     <div id="home-actions">
       <button id="btn-new-js" class="primary">+ Buat Js Baru</button>
+      <button id="btn-new-folder">+ Folder</button>
       <button id="btn-import-js">Import Js</button>
+      <button id="btn-install-all">Install All</button>
       <input type="file" id="file-import-js" accept=".js,text/javascript,application/javascript,application/x-javascript,text/plain,*/*" style="display:none;" />
       <span id="home-count">0 / 10 file</span>
     </div>
@@ -233,6 +237,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs/loader.min.js"></script>
 <script>
   const FILES_INDEX_KEY = 'mc-editor-files';
+  const FOLDERS_INDEX_KEY = 'mc-editor-folders';
   const OLD_CODE_KEY = 'mc-editor-code';
   const TYPES_KEY = 'mc-editor-types';
   const WRAP_KEY = 'mc-editor-wordwrap';
@@ -259,6 +264,12 @@
   }
   function saveFilesIndex(list) {
     localStorage.setItem(FILES_INDEX_KEY, JSON.stringify(list));
+  }
+  function loadFoldersIndex() {
+    try { return JSON.parse(localStorage.getItem(FOLDERS_INDEX_KEY) || '[]'); } catch (e) { return []; }
+  }
+  function saveFoldersIndex(list) {
+    localStorage.setItem(FOLDERS_INDEX_KEY, JSON.stringify(list));
   }
   function touchFile(id) {
     const list = loadFilesIndex();
@@ -349,19 +360,25 @@
     const backBtn = document.getElementById('btn-folder-back');
     const titleEl = document.getElementById('home-title');
     const subtitleEl = document.getElementById('home-subtitle');
+    const newFolderBtn = document.getElementById('btn-new-folder');
+    const installAllBtn = document.getElementById('btn-install-all');
 
     if (currentFolder === null) {
       backBtn.style.display = 'none';
+      newFolderBtn.style.display = '';
+      installAllBtn.style.display = '';
       titleEl.textContent = 'ScriptAPI Editor';
       subtitleEl.textContent = 'File JavaScript kamu, tersimpan di HP.';
 
-      const folderNames = Array.from(new Set(allList.filter((f) => f.folder).map((f) => f.folder))).sort((a, b) => a.localeCompare(b));
+      const explicitFolders = loadFoldersIndex();
+      const fileFolders = allList.filter((f) => f.folder).map((f) => f.folder);
+      const folderNames = Array.from(new Set(explicitFolders.concat(fileFolders))).sort((a, b) => a.localeCompare(b));
       const rootFiles = allList.filter((f) => !f.folder).sort((a, b) => b.updatedAt - a.updatedAt);
 
       if (folderNames.length === 0 && rootFiles.length === 0) {
         const empty = document.createElement('div');
         empty.id = 'home-empty';
-        empty.textContent = 'Belum ada file. Tekan tombol di bawah untuk mulai.';
+        empty.textContent = 'Belum ada file/folder. Tekan tombol di bawah untuk mulai.';
         wrap.appendChild(empty);
       } else {
         folderNames.forEach((name) => {
@@ -375,6 +392,8 @@
       }
     } else {
       backBtn.style.display = '';
+      newFolderBtn.style.display = 'none';
+      installAllBtn.style.display = 'none';
       titleEl.textContent = currentFolder;
       subtitleEl.textContent = 'Folder';
 
@@ -406,7 +425,6 @@
   }
 
   function showHomeView() {
-    currentFolder = null;
     document.getElementById('editor-view').style.display = 'none';
     document.getElementById('home-view').style.display = 'flex';
     renderHome();
@@ -429,32 +447,77 @@
     }
     const promptLabel = currentFolder
       ? 'Nama file baru di folder "' + currentFolder + '" (.js otomatis ditambahkan):'
-      : 'Nama file baru (.js otomatis ditambahkan, bisa pakai folder seperti utils/calculate):';
+      : 'Nama file baru (.js otomatis ditambahkan):';
     let raw = prompt(promptLabel, 'main');
     if (raw === null) return;
-    raw = raw.trim();
+    raw = raw.trim().replace(/\//g, '-');
     if (!raw) return;
     if (!/\.js$/i.test(raw)) raw += '.js';
 
-    let parsed;
-    if (currentFolder) {
-      parsed = { folder: currentFolder, name: raw.split('/').pop() };
-    } else {
-      parsed = parseFolderAndName(raw);
-    }
-
-    const fp = (parsed.folder ? parsed.folder + '/' : '') + parsed.name;
+    const folder = currentFolder || '';
+    const fp = (folder ? folder + '/' : '') + raw;
     if (pathExists(fp)) {
-      alert('File dengan nama/folder itu sudah ada. Pakai nama lain.');
+      alert('File dengan nama itu sudah ada. Pakai nama lain.');
       return;
     }
 
     const id = genId();
     const newList = loadFilesIndex();
-    newList.push({ id: id, name: parsed.name, folder: parsed.folder, createdAt: Date.now(), updatedAt: Date.now() });
+    newList.push({ id: id, name: raw, folder: folder, createdAt: Date.now(), updatedAt: Date.now() });
     saveFilesIndex(newList);
     localStorage.setItem(fileContentKey(id), defaultCode);
     openFile(id);
+  });
+
+  document.getElementById('btn-new-folder').addEventListener('click', () => {
+    let name = prompt('Nama folder baru:', 'utils');
+    if (name === null) return;
+    name = name.trim().replace(/^\/+|\/+$/g, '');
+    if (!name) return;
+    if (name.indexOf('/') !== -1) {
+      alert('Nama folder tidak boleh mengandung "/". Cuma satu level folder yang didukung.');
+      return;
+    }
+    const folders = loadFoldersIndex();
+    const fileFolders = loadFilesIndex().filter((f) => f.folder).map((f) => f.folder);
+    if (folders.indexOf(name) !== -1 || fileFolders.indexOf(name) !== -1) {
+      alert('Folder dengan nama itu sudah ada.');
+      return;
+    }
+    folders.push(name);
+    saveFoldersIndex(folders);
+    renderHome();
+  });
+
+  document.getElementById('btn-install-all').addEventListener('click', () => {
+    if (typeof JSZip === 'undefined') {
+      alert('JSZip belum termuat. Cek koneksi internet lalu reload halaman.');
+      return;
+    }
+    const list = loadFilesIndex();
+    if (list.length === 0) {
+      alert('Belum ada file untuk di-install.');
+      return;
+    }
+    const zip = new JSZip();
+    const scriptsFolder = zip.folder('scripts');
+    list.forEach((f) => {
+      const content = localStorage.getItem(fileContentKey(f.id)) || '';
+      const relPath = (f.folder ? f.folder + '/' : '') + f.name;
+      scriptsFolder.file(relPath, content);
+    });
+    zip.generateAsync({ type: 'blob' }).then((blob) => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'scripts.zip';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }).catch((err) => {
+      alert('Gagal membuat ZIP: ' + err.message);
+    });
   });
 
   function uniquePath(path) {
@@ -1021,6 +1084,7 @@
     const list = loadFilesIndex();
     list.forEach((f) => localStorage.removeItem(fileContentKey(f.id)));
     localStorage.removeItem(FILES_INDEX_KEY);
+    localStorage.removeItem(FOLDERS_INDEX_KEY);
     localStorage.removeItem(TYPES_KEY);
     localStorage.removeItem(WRAP_KEY);
     localStorage.removeItem(OLD_CODE_KEY);
