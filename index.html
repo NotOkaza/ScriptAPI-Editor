@@ -112,26 +112,6 @@
   }
   #settings-panel label { font-size: 12px; color: #bbb; }
   #settings-panel select { min-width: 150px; }
-  #cmdpalette-overlay {
-    display: none; position: absolute; inset: 0; background: rgba(0,0,0,0.7);
-    z-index: 25; align-items: flex-start; justify-content: center; padding: 16px;
-  }
-  #cmdpalette-overlay.show { display: flex; }
-  #cmdpalette-panel {
-    background: #252526; border: 1px solid #4a4a4a; border-radius: 10px;
-    padding: 10px; width: 100%; max-width: 420px; margin-top: 40px;
-    display: flex; flex-direction: column; gap: 8px;
-  }
-  #cmdpalette-input {
-    background: #1e1e1e; color: #ddd; border: 1px solid #4a4a4a;
-    border-radius: 6px; padding: 8px 10px; font-size: 13px; font-family: inherit;
-  }
-  #cmdpalette-list { display: flex; flex-direction: column; gap: 4px; max-height: 300px; overflow-y: auto; }
-  .cmd-item {
-    text-align: left; padding: 9px 10px; background: #1e1e1e; border: 1px solid #333;
-    border-radius: 6px; font-size: 13px;
-  }
-  .cmd-item:active { background: #2c2c2d; }
   #actionbar {
     display: flex; align-items: center; gap: 5px;
     padding: 5px 10px; background: #202021;
@@ -153,6 +133,7 @@
     position: absolute; inset: 0;
     overscroll-behavior: contain;
   }
+  /* Monaco scrollbar: lebih tipis dan tidak terlalu mencolok. */
   .monaco-scrollable-element > .scrollbar.vertical {
     width: 6px !important;
     background: transparent !important;
@@ -255,9 +236,6 @@
       <button id="btn-down">↓</button>
       <button id="btn-undo">↶</button>
       <button id="btn-redo">↷</button>
-      <button id="btn-format">Format</button>
-      <button id="btn-find">Find</button>
-      <button id="btn-replace">Replace</button>
       <button id="btn-copy">Copy</button>
     </div>
     <div id="delbar">
@@ -289,13 +267,6 @@
     <div id="settings-actions">
       <button id="btn-settings-close">Tutup</button>
     </div>
-  </div>
-</div>
-
-<div id="cmdpalette-overlay">
-  <div id="cmdpalette-panel">
-    <input type="text" id="cmdpalette-input" placeholder="Ketik command..." autocomplete="off" />
-    <div id="cmdpalette-list"></div>
   </div>
 </div>
 
@@ -369,7 +340,7 @@
   let monacoLoadCallbacks = [];
   const openModels = {};
 
-  const defaultCode = 'import { world, system } from "@minecraft/server";\n';
+  const defaultCode = '\timport { world, system } from "@minecraft/server";';
 
   function genId() {
     return 'f' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -914,7 +885,7 @@
       automaticLayout: true,
       wordWrap: getWordWrap(),
       scrollBeyondLastLine: false,
-      tabSize: 2,
+      tabSize: 1,
       insertSpaces: true,
       accessibilitySupport: 'off',
       smoothScrolling: false,
@@ -1320,19 +1291,17 @@
     updateWrapButton();
   });
 
-  function openSettings() {
+  document.getElementById('btn-settings').addEventListener('click', () => {
     document.getElementById('settings-overlay').classList.add('show');
-  }
-  function closeSettings() {
-    document.getElementById('settings-overlay').classList.remove('show');
-  }
+  });
 
-  document.getElementById('btn-settings').addEventListener('click', openSettings);
-  document.getElementById('btn-settings-close').addEventListener('click', closeSettings);
+  document.getElementById('btn-settings-close').addEventListener('click', () => {
+    document.getElementById('settings-overlay').classList.remove('show');
+  });
 
   document.getElementById('settings-overlay').addEventListener('click', (event) => {
     if (event.target === event.currentTarget) {
-      closeSettings();
+      event.currentTarget.classList.remove('show');
     }
   });
 
@@ -1390,40 +1359,19 @@
   bindTap(document.getElementById('btn-undo'), doUndo);
   bindTap(document.getElementById('btn-redo'), doRedo);
 
-  function openFind() {
+  document.addEventListener('keydown', (e) => {
     if (!editor) return;
-    const action = editor.getAction('actions.find');
-    if (action) action.run();
-  }
-  function openReplace() {
-    if (!editor) return;
-    const action = editor.getAction('editor.action.startFindReplaceAction');
-    if (action) action.run();
-  }
-
-  bindTap(document.getElementById('btn-find'), openFind);
-  bindTap(document.getElementById('btn-replace'), openReplace);
-
-  function formatCurrentFile() {
-    if (!editor) return;
-    const action = editor.getAction('editor.action.formatDocument');
-    if (action) {
-      action.run();
-    } else {
-      alert('Formatter belum siap, coba lagi sebentar.');
+    const ctrl = e.ctrlKey || e.metaKey;
+    if (!ctrl) return;
+    const key = e.key.toLowerCase();
+    if (key === 'z' && !e.shiftKey) {
+      e.preventDefault();
+      doUndo();
+    } else if (key === 'y') {
+      e.preventDefault();
+      doRedo();
     }
-  }
-  bindTap(document.getElementById('btn-format'), formatCurrentFile);
-
-  function saveCurrentFile() {
-    if (!editor || !currentFileId) return;
-    localStorage.setItem(fileContentKey(currentFileId), editor.getValue());
-    touchFile(currentFileId);
-    const statusEl = document.getElementById('status');
-    const original = statusEl.textContent;
-    statusEl.textContent = 'Tersimpan.';
-    setTimeout(() => { statusEl.textContent = original; }, 1000);
-  }
+  });
 
   function duplicateCurrentFile() {
     if (!currentFileId) {
@@ -1503,7 +1451,7 @@
   }
   bindTap(document.getElementById('btn-rename'), renameCurrentFile);
 
-  function downloadCurrentFile() {
+  document.getElementById('btn-download').addEventListener('click', () => {
     if (!editor) return;
     const content = editor.getValue();
     const meta = loadFilesIndex().find((f) => f.id === currentFileId);
@@ -1517,10 +1465,9 @@
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-  }
-  document.getElementById('btn-download').addEventListener('click', downloadCurrentFile);
+  });
 
-  function resetEverything() {
+  document.getElementById('btn-reset').addEventListener('click', () => {
     if (!confirm('Hapus SEMUA file, types, dan pengaturan? Tidak bisa dibatalkan.')) return;
     const list = loadFilesIndex();
     list.forEach((f) => localStorage.removeItem(fileContentKey(f.id)));
@@ -1531,94 +1478,6 @@
     localStorage.removeItem(FONT_STYLE_KEY);
     localStorage.removeItem(OLD_CODE_KEY);
     location.reload();
-  }
-  document.getElementById('btn-reset').addEventListener('click', resetEverything);
-
-  const COMMANDS = [
-    { id: 'save', label: 'Save', run: saveCurrentFile },
-    { id: 'find', label: 'Find', run: openFind },
-    { id: 'replace', label: 'Replace', run: openReplace },
-    { id: 'undo', label: 'Undo', run: doUndo },
-    { id: 'redo', label: 'Redo', run: doRedo },
-    { id: 'format', label: 'Format Code', run: formatCurrentFile },
-    { id: 'duplicate', label: 'Duplicate File', run: duplicateCurrentFile },
-    { id: 'rename', label: 'Rename File', run: renameCurrentFile },
-    { id: 'download', label: 'Download', run: downloadCurrentFile },
-    { id: 'settings', label: 'Settings', run: openSettings }
-  ];
-
-  function renderCommandList(filterText) {
-    const listEl = document.getElementById('cmdpalette-list');
-    listEl.innerHTML = '';
-    const q = (filterText || '').toLowerCase();
-    COMMANDS.filter((c) => c.label.toLowerCase().indexOf(q) !== -1).forEach((c) => {
-      const btn = document.createElement('button');
-      btn.className = 'cmd-item';
-      btn.textContent = c.label;
-      btn.addEventListener('click', () => {
-        closeCommandPalette();
-        c.run();
-      });
-      listEl.appendChild(btn);
-    });
-  }
-
-  function openCommandPalette() {
-    const overlay = document.getElementById('cmdpalette-overlay');
-    const input = document.getElementById('cmdpalette-input');
-    overlay.classList.add('show');
-    input.value = '';
-    renderCommandList('');
-    setTimeout(() => input.focus(), 50);
-  }
-  function closeCommandPalette() {
-    document.getElementById('cmdpalette-overlay').classList.remove('show');
-  }
-
-  document.getElementById('cmdpalette-input').addEventListener('input', (e) => {
-    renderCommandList(e.target.value);
-  });
-  document.getElementById('cmdpalette-overlay').addEventListener('click', (e) => {
-    if (e.target === e.currentTarget) closeCommandPalette();
-  });
-
-  document.addEventListener('keydown', (e) => {
-    const ctrl = e.ctrlKey || e.metaKey;
-    if (!ctrl) return;
-    const key = e.key.toLowerCase();
-
-    if (key === 'p' && e.shiftKey) {
-      e.preventDefault();
-      openCommandPalette();
-      return;
-    }
-    if (!editor) return;
-
-    if (key === 's') {
-      e.preventDefault();
-      saveCurrentFile();
-      return;
-    }
-    if (key === 'f' && !e.shiftKey) {
-      e.preventDefault();
-      openFind();
-      return;
-    }
-    if (key === 'h') {
-      e.preventDefault();
-      openReplace();
-      return;
-    }
-    if (key === 'z' && !e.shiftKey) {
-      e.preventDefault();
-      doUndo();
-      return;
-    }
-    if (key === 'y') {
-      e.preventDefault();
-      doRedo();
-      return;
-    }
   });
 
   if ('serviceWorker' in navigator) {
