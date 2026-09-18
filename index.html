@@ -112,6 +112,26 @@
   }
   #settings-panel label { font-size: 12px; color: #bbb; }
   #settings-panel select { min-width: 150px; }
+  #cmdpalette-overlay {
+    display: none; position: absolute; inset: 0; background: rgba(0,0,0,0.7);
+    z-index: 25; align-items: flex-start; justify-content: center; padding: 16px;
+  }
+  #cmdpalette-overlay.show { display: flex; }
+  #cmdpalette-panel {
+    background: #252526; border: 1px solid #4a4a4a; border-radius: 10px;
+    padding: 10px; width: 100%; max-width: 420px; margin-top: 40px;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  #cmdpalette-input {
+    background: #1e1e1e; color: #ddd; border: 1px solid #4a4a4a;
+    border-radius: 6px; padding: 8px 10px; font-size: 13px; font-family: inherit;
+  }
+  #cmdpalette-list { display: flex; flex-direction: column; gap: 4px; max-height: 300px; overflow-y: auto; }
+  .cmd-item {
+    text-align: left; padding: 9px 10px; background: #1e1e1e; border: 1px solid #333;
+    border-radius: 6px; font-size: 13px;
+  }
+  .cmd-item:active { background: #2c2c2d; }
   #actionbar {
     display: flex; align-items: center; gap: 5px;
     padding: 5px 10px; background: #202021;
@@ -133,7 +153,6 @@
     position: absolute; inset: 0;
     overscroll-behavior: contain;
   }
-  /* Monaco scrollbar: lebih tipis dan tidak terlalu mencolok. */
   .monaco-scrollable-element > .scrollbar.vertical {
     width: 6px !important;
     background: transparent !important;
@@ -218,6 +237,8 @@
     <div id="topbar">
       <button id="btn-home">← Home</button>
       <span id="current-filename">main.js</span>
+      <button id="btn-duplicate">⧉ Duplikat</button>
+      <button id="btn-rename">✎ Rename</button>
       <button id="btn-download" class="primary">↓ .js</button>
       <button id="btn-reset">Reset</button>
       <button id="btn-settings">Settings</button>
@@ -232,6 +253,11 @@
       <button id="btn-right">→</button>
       <button id="btn-up">↑</button>
       <button id="btn-down">↓</button>
+      <button id="btn-undo">↶</button>
+      <button id="btn-redo">↷</button>
+      <button id="btn-format">Format</button>
+      <button id="btn-find">Find</button>
+      <button id="btn-replace">Replace</button>
       <button id="btn-copy">Copy</button>
     </div>
     <div id="delbar">
@@ -263,6 +289,13 @@
     <div id="settings-actions">
       <button id="btn-settings-close">Tutup</button>
     </div>
+  </div>
+</div>
+
+<div id="cmdpalette-overlay">
+  <div id="cmdpalette-panel">
+    <input type="text" id="cmdpalette-input" placeholder="Ketik command..." autocomplete="off" />
+    <div id="cmdpalette-list"></div>
   </div>
 </div>
 
@@ -336,7 +369,7 @@
   let monacoLoadCallbacks = [];
   const openModels = {};
 
-  const defaultCode = '\timport { world, system } from "@minecraft/server";';
+  const defaultCode = 'import { world, system } from "@minecraft/server";\n';
 
   function genId() {
     return 'f' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -733,6 +766,7 @@
       model.onDidChangeContent(() => {
         localStorage.setItem(fileContentKey(id), model.getValue());
         touchFile(id);
+        updateUndoRedoButtons();
       });
     }
     openModels[id] = model;
@@ -756,6 +790,7 @@
         editor.setModel(model);
       }
       document.getElementById('loading').style.display = 'none';
+      updateUndoRedoButtons();
       setTimeout(() => editor.layout(), 50);
       setTimeout(() => editor.layout(), 300);
     });
@@ -879,7 +914,7 @@
       automaticLayout: true,
       wordWrap: getWordWrap(),
       scrollBeyondLastLine: false,
-      tabSize: 1,
+      tabSize: 2,
       insertSpaces: true,
       accessibilitySupport: 'off',
       smoothScrolling: false,
@@ -901,6 +936,7 @@
     document.getElementById('font-style-select').value = 'Roboto Mono';
     applyFontStyle();
     setupDirectionalScrollLock();
+    updateUndoRedoButtons();
 
     window.addEventListener('resize', () => { if (editor) editor.layout(); });
     window.addEventListener('orientationchange', () => {
@@ -1284,17 +1320,19 @@
     updateWrapButton();
   });
 
-  document.getElementById('btn-settings').addEventListener('click', () => {
+  function openSettings() {
     document.getElementById('settings-overlay').classList.add('show');
-  });
-
-  document.getElementById('btn-settings-close').addEventListener('click', () => {
+  }
+  function closeSettings() {
     document.getElementById('settings-overlay').classList.remove('show');
-  });
+  }
+
+  document.getElementById('btn-settings').addEventListener('click', openSettings);
+  document.getElementById('btn-settings-close').addEventListener('click', closeSettings);
 
   document.getElementById('settings-overlay').addEventListener('click', (event) => {
     if (event.target === event.currentTarget) {
-      event.currentTarget.classList.remove('show');
+      closeSettings();
     }
   });
 
@@ -1323,7 +1361,149 @@
     editor.trigger('toolbar', 'cursorDown', null);
   });
 
-  document.getElementById('btn-download').addEventListener('click', () => {
+  function updateUndoRedoButtons() {
+    const undoBtn = document.getElementById('btn-undo');
+    const redoBtn = document.getElementById('btn-redo');
+    if (!editor) {
+      undoBtn.disabled = true;
+      redoBtn.disabled = true;
+      return;
+    }
+    const model = editor.getModel();
+    const canUndo = model && typeof model.canUndo === 'function' ? model.canUndo() : true;
+    const canRedo = model && typeof model.canRedo === 'function' ? model.canRedo() : true;
+    undoBtn.disabled = !canUndo;
+    redoBtn.disabled = !canRedo;
+  }
+
+  function doUndo() {
+    if (!editor) return;
+    editor.trigger('keyboard', 'undo', null);
+    updateUndoRedoButtons();
+  }
+  function doRedo() {
+    if (!editor) return;
+    editor.trigger('keyboard', 'redo', null);
+    updateUndoRedoButtons();
+  }
+
+  bindTap(document.getElementById('btn-undo'), doUndo);
+  bindTap(document.getElementById('btn-redo'), doRedo);
+
+  function openFind() {
+    if (!editor) return;
+    const action = editor.getAction('actions.find');
+    if (action) action.run();
+  }
+  function openReplace() {
+    if (!editor) return;
+    const action = editor.getAction('editor.action.startFindReplaceAction');
+    if (action) action.run();
+  }
+
+  bindTap(document.getElementById('btn-find'), openFind);
+  bindTap(document.getElementById('btn-replace'), openReplace);
+
+  function formatCurrentFile() {
+    if (!editor) return;
+    const action = editor.getAction('editor.action.formatDocument');
+    if (action) {
+      action.run();
+    } else {
+      alert('Formatter belum siap, coba lagi sebentar.');
+    }
+  }
+  bindTap(document.getElementById('btn-format'), formatCurrentFile);
+
+  function saveCurrentFile() {
+    if (!editor || !currentFileId) return;
+    localStorage.setItem(fileContentKey(currentFileId), editor.getValue());
+    touchFile(currentFileId);
+    const statusEl = document.getElementById('status');
+    const original = statusEl.textContent;
+    statusEl.textContent = 'Tersimpan.';
+    setTimeout(() => { statusEl.textContent = original; }, 1000);
+  }
+
+  function duplicateCurrentFile() {
+    if (!currentFileId) {
+      alert('Buka salah satu file dulu.');
+      return;
+    }
+    const list = loadFilesIndex();
+    if (list.length >= MAX_FILES) {
+      alert('Maksimal ' + MAX_FILES + ' file. Hapus salah satu dulu.');
+      return;
+    }
+    const meta = list.find((f) => f.id === currentFileId);
+    if (!meta) return;
+
+    const content = editor ? editor.getValue() : (localStorage.getItem(fileContentKey(meta.id)) || '');
+    const baseName = meta.name.replace(/\.js$/i, '');
+    const folder = meta.folder || '';
+
+    let candidateName = baseName + ' copy.js';
+    let n = 2;
+    while (pathExists((folder ? folder + '/' : '') + candidateName)) {
+      candidateName = baseName + ' copy ' + n + '.js';
+      n++;
+    }
+
+    const id = genId();
+    const newList = loadFilesIndex();
+    newList.push({ id: id, name: candidateName, folder: folder, createdAt: Date.now(), updatedAt: Date.now() });
+    saveFilesIndex(newList);
+    localStorage.setItem(fileContentKey(id), content);
+    openFile(id);
+  }
+  bindTap(document.getElementById('btn-duplicate'), duplicateCurrentFile);
+
+  function renameCurrentFile() {
+    if (!currentFileId) {
+      alert('Buka salah satu file dulu.');
+      return;
+    }
+    const list = loadFilesIndex();
+    const meta = list.find((f) => f.id === currentFileId);
+    if (!meta) return;
+
+    let raw = prompt('Nama baru untuk file ini (.js otomatis ditambahkan):', meta.name.replace(/\.js$/i, ''));
+    if (raw === null) return;
+    raw = raw.trim().replace(/\//g, '-');
+    if (!raw) {
+      alert('Nama tidak boleh kosong.');
+      return;
+    }
+    if (!/\.js$/i.test(raw)) raw += '.js';
+
+    const folder = meta.folder || '';
+    const oldPath = fullPath(meta);
+    const newPath = (folder ? folder + '/' : '') + raw;
+
+    if (newPath !== oldPath && pathExists(newPath)) {
+      alert('Sudah ada file dengan nama itu di folder yang sama.');
+      return;
+    }
+    if (newPath === oldPath) return;
+
+    meta.name = raw;
+    meta.updatedAt = Date.now();
+    saveFilesIndex(list);
+
+    if (openModels[meta.id]) {
+      openModels[meta.id].dispose();
+      delete openModels[meta.id];
+    }
+    const newModel = getOrCreateModelForFile(meta.id);
+    if (editor && newModel) {
+      editor.setModel(newModel);
+    }
+    document.getElementById('current-filename').textContent = raw;
+    updateUndoRedoButtons();
+  }
+  bindTap(document.getElementById('btn-rename'), renameCurrentFile);
+
+  function downloadCurrentFile() {
     if (!editor) return;
     const content = editor.getValue();
     const meta = loadFilesIndex().find((f) => f.id === currentFileId);
@@ -1337,9 +1517,10 @@
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-  });
+  }
+  document.getElementById('btn-download').addEventListener('click', downloadCurrentFile);
 
-  document.getElementById('btn-reset').addEventListener('click', () => {
+  function resetEverything() {
     if (!confirm('Hapus SEMUA file, types, dan pengaturan? Tidak bisa dibatalkan.')) return;
     const list = loadFilesIndex();
     list.forEach((f) => localStorage.removeItem(fileContentKey(f.id)));
@@ -1350,6 +1531,94 @@
     localStorage.removeItem(FONT_STYLE_KEY);
     localStorage.removeItem(OLD_CODE_KEY);
     location.reload();
+  }
+  document.getElementById('btn-reset').addEventListener('click', resetEverything);
+
+  const COMMANDS = [
+    { id: 'save', label: 'Save', run: saveCurrentFile },
+    { id: 'find', label: 'Find', run: openFind },
+    { id: 'replace', label: 'Replace', run: openReplace },
+    { id: 'undo', label: 'Undo', run: doUndo },
+    { id: 'redo', label: 'Redo', run: doRedo },
+    { id: 'format', label: 'Format Code', run: formatCurrentFile },
+    { id: 'duplicate', label: 'Duplicate File', run: duplicateCurrentFile },
+    { id: 'rename', label: 'Rename File', run: renameCurrentFile },
+    { id: 'download', label: 'Download', run: downloadCurrentFile },
+    { id: 'settings', label: 'Settings', run: openSettings }
+  ];
+
+  function renderCommandList(filterText) {
+    const listEl = document.getElementById('cmdpalette-list');
+    listEl.innerHTML = '';
+    const q = (filterText || '').toLowerCase();
+    COMMANDS.filter((c) => c.label.toLowerCase().indexOf(q) !== -1).forEach((c) => {
+      const btn = document.createElement('button');
+      btn.className = 'cmd-item';
+      btn.textContent = c.label;
+      btn.addEventListener('click', () => {
+        closeCommandPalette();
+        c.run();
+      });
+      listEl.appendChild(btn);
+    });
+  }
+
+  function openCommandPalette() {
+    const overlay = document.getElementById('cmdpalette-overlay');
+    const input = document.getElementById('cmdpalette-input');
+    overlay.classList.add('show');
+    input.value = '';
+    renderCommandList('');
+    setTimeout(() => input.focus(), 50);
+  }
+  function closeCommandPalette() {
+    document.getElementById('cmdpalette-overlay').classList.remove('show');
+  }
+
+  document.getElementById('cmdpalette-input').addEventListener('input', (e) => {
+    renderCommandList(e.target.value);
+  });
+  document.getElementById('cmdpalette-overlay').addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) closeCommandPalette();
+  });
+
+  document.addEventListener('keydown', (e) => {
+    const ctrl = e.ctrlKey || e.metaKey;
+    if (!ctrl) return;
+    const key = e.key.toLowerCase();
+
+    if (key === 'p' && e.shiftKey) {
+      e.preventDefault();
+      openCommandPalette();
+      return;
+    }
+    if (!editor) return;
+
+    if (key === 's') {
+      e.preventDefault();
+      saveCurrentFile();
+      return;
+    }
+    if (key === 'f' && !e.shiftKey) {
+      e.preventDefault();
+      openFind();
+      return;
+    }
+    if (key === 'h') {
+      e.preventDefault();
+      openReplace();
+      return;
+    }
+    if (key === 'z' && !e.shiftKey) {
+      e.preventDefault();
+      doUndo();
+      return;
+    }
+    if (key === 'y') {
+      e.preventDefault();
+      doRedo();
+      return;
+    }
   });
 
   if ('serviceWorker' in navigator) {
